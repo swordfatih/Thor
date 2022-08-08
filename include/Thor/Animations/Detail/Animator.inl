@@ -49,6 +49,12 @@ detail::PlayingQueue<Id> Animator<Animated, Id>::queue()
 }
 
 template <class Animated, typename Id>
+std::size_t Animator<Animated, Id>::count() const
+{
+	return mPlayingAnimations.size();
+}
+
+template <class Animated, typename Id>
 void Animator<Animated, Id>::stop()
 {
 	aurora::clearQueue(mQueuedIds);

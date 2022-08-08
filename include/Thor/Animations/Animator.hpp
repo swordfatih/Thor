@@ -106,6 +106,11 @@ class Animator
 		/// @return Implementation-defined queue object that can be appended to with @c operator<<. Do not store this object.
 		AURORA_IMPL_DEF(detail::PlayingQueue<Id>)	queue();
 
+		/// @brief Count of animations currently queued.
+		/// @details This function returns the number of animations currently queued.
+		/// @return Number of animations currently queued.
+		std::size_t					count() const;
+		
 		/// @brief Stops all playing and queued animations.
 		/// @details Animations currently playing are interrupted, and the queue of pending animations is cleared. After this
 		///  call, this object effectively behaves like a newly constructed Animator instance.
