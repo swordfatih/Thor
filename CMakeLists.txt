@@ -27,144 +27,104 @@
 
 
 cmake_minimum_required(VERSION 3.16)
+project(thor LANGUAGES CXX)
 
-# Specify default build type if none provided (before project() command)
-if(NOT CMAKE_BUILD_TYPE)
-	set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build (Debug or Release)" FORCE)
+include(FetchContent)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# ----------------------------
+# Options
+# ----------------------------
+option(THOR_SHARED_LIBS "Build shared libraries" OFF)
+option(THOR_BUILD_EXAMPLES "Build example projects" OFF)
+option(THOR_BUILD_DOC "Generate documentation with Doxygen" OFF)
+option(THOR_STATIC_STD_LIBS "Use statically linked standard/runtime libraries (must match SFML)" OFF)
+
+# ----------------------------
+# Fetch SFML (2.6.2)
+# ----------------------------
+FetchContent_Declare(
+  sfml
+  GIT_REPOSITORY https://github.com/SFML/SFML.git
+  GIT_TAG 2.6.2
+)
+FetchContent_MakeAvailable(sfml)
+
+# ----------------------------
+# Aurora (local submodule)
+# ----------------------------
+add_library(aurora INTERFACE)
+target_include_directories(aurora INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/extlibs/aurora/include)
+
+# ----------------------------
+# Thor library
+# ----------------------------
+file(GLOB_RECURSE THOR_SOURCES CONFIGURE_DEPENDS
+  src/*.cpp
+)
+
+add_library(thor ${THOR_SOURCES})
+add_library(thor::thor ALIAS thor)
+
+target_include_directories(thor
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(thor
+  PUBLIC
+    sfml-graphics
+    sfml-window
+    sfml-system
+    sfml-audio
+    aurora
+)
+
+target_compile_definitions(thor PRIVATE THOR_EXPORTS)
+
+if (THOR_STATIC_STD_LIBS AND MSVC)
+  foreach(flag_var
+    CMAKE_C_FLAGS_DEBUG CMAKE_C_FLAGS_RELEASE
+    CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE)
+    string(REPLACE "/MD" "/MT" ${flag_var} "${${flag_var}}")
+  endforeach()
+elseif(THOR_STATIC_STD_LIBS AND CMAKE_COMPILER_IS_GNUCXX)
+  target_compile_options(thor PRIVATE -static-libgcc -static-libstdc++)
 endif()
 
-# For generators with multiple configurations (like VS), only allow Debug and Release
-if(CMAKE_CONFIGURATION_TYPES)
-	set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "Limited configurations" FORCE)
-	mark_as_advanced(CMAKE_CONFIGURATION_TYPES)
+set_target_properties(thor PROPERTIES
+  WINDOWS_EXPORT_ALL_SYMBOLS ON
+  POSITION_INDEPENDENT_CODE ON
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON
+)
+
+if (THOR_SHARED_LIBS)
+  set_target_properties(thor PROPERTIES
+    BUILD_SHARED_LIBS ON
+  )
 endif()
 
-project(thor)
-
-
-# Global preprocessor and include options
-add_definitions(-DTHOR_EXPORTS)
-include_directories(${PROJECT_SOURCE_DIR}/include)
-include_directories(${PROJECT_SOURCE_DIR}/extlibs/aurora/include)
-
-# Predefined configuration options
-set(THOR_SHARED_LIBS TRUE CACHE BOOL "Build shared libraries (use shared SFML librares)")
-set(THOR_BUILD_EXAMPLES FALSE CACHE BOOL "Build example projects")
-set(THOR_BUILD_DOC FALSE CACHE BOOL "Create HTML documentation (requires Doxygen)")
-
-# Windows: Choose to link CRT libraries statically or dynamically
-if(WIN32)
-	set(THOR_STATIC_STD_LIBS FALSE CACHE BOOL "Use statically linked standard/runtime libraries? This option must match the one used for SFML.")
-
-	# Determine whether we're dealing with a TDM compiler or not
-	if(CMAKE_COMPILER_IS_GNUCXX)
-		execute_process(COMMAND "${CMAKE_CXX_COMPILER}" "--version" OUTPUT_VARIABLE GCC_COMPILER_VERSION)
-		string(REGEX MATCHALL ".*(tdm[64]*-[1-9]).*" COMPILER_GCC_TDM "${GCC_COMPILER_VERSION}")
-	endif()
-
-	# Modify compiler flags globally
-	if(THOR_STATIC_STD_LIBS)
-		if(THOR_SHARED_LIBS)
-			message("\n-> THOR_STATIC_STD_LIBS and THOR_SHARED_LIBS are not compatible.")
-			message("-> They lead to multiple runtime environments which result in undefined behavior.\n")
-		elseif(MSVC)
-			foreach(flag CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE)
-				if(${flag} MATCHES "/MD")
-					string(REGEX REPLACE "/MD" "/MT" ${flag} "${${flag}}")
-				endif()
-			endforeach()
-		elseif(CMAKE_COMPILER_IS_GNUCXX AND NOT COMPILER_GCC_TDM)
-			set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static-libgcc -static-libstdc++")
-		endif()
-	elseif(COMPILER_GCC_TDM)
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -shared-libgcc -shared-libstdc++")
-	endif()
-endif()
-
-
-# Compiler-specific flags and definitions
-set(CMAKE_CXX_STANDARD 11)
-
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-	set(THOR_CLANG_STDLIB "" CACHE STRING "Chose standard library (libstdc++ or libc++) or leave empty for default")
-
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-switch -Wno-logical-op-parentheses")
-	if(NOT THOR_CLANG_STDLIB STREQUAL "")
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=${THOR_CLANG_STDLIB}")
-	endif()
-
-	add_definitions(-DTHOR_USE_STD_RANDOMENGINE) # Workaround for libc++ bug
-endif()
-
-
-# Variable for install directory
-if(UNIX)
-	set(THOR_EXAMPLE_INSTALL_DIR share/Thor)
-	set(THOR_DOC_INSTALL_DIR share/doc/Thor)
-else()
-	set(THOR_EXAMPLE_INSTALL_DIR .)
-	set(THOR_DOC_INSTALL_DIR .)
-endif()
-
-
-# Find SFML. Note: this handles all dependencies, libraries and include directories.
-if(NOT THOR_SHARED_LIBS)
-	set(SFML_STATIC_LIBRARIES TRUE)
-endif()
-find_package(SFML 2.5 COMPONENTS audio graphics window system CONFIG REQUIRED)
-
-if(NOT SFML_FOUND)
-	set(SFML_DIR "" CACHE PATH "SFML top-level directory")
-	message("\n-> SFML directory not found. Set SFML_DIR (not SFML_ROOT) to SFML's top-level path (containing \"include\" and \"lib\" directories).")
-	message("-> Make sure the SFML libraries >= 2.5 with the same configuration (Release/Debug, Static/Dynamic) exist.\n")
-endif()
-
-
-# Macro to link SFML
-macro(thor_link_sfml THOR_TARGET)
-	# Note: in the future, should use target_link_libraries(${THOR_TARGET} SFML::audio SFML::graphics SFML::window SFML::system)
-	target_link_libraries(${THOR_TARGET} sfml-audio sfml-graphics sfml-window sfml-system)
-endmacro()
-
-# Macro to link Thor (for examples)
-macro(thor_link_thor THOR_TARGET)
-	target_link_libraries(${THOR_TARGET} thor)
-endmacro()
-
-
-# Enable IDE folders and set them for predefined CMake projects
-set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-set_property(GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER "CMake")
-
-
-# Documentation
-if(THOR_BUILD_DOC)
-	add_subdirectory(doc)
-endif()
-
-
-# C++ source code
-add_subdirectory(src)
-
+# ----------------------------
+# Examples
+# ----------------------------
 if(THOR_BUILD_EXAMPLES)
-	add_subdirectory(examples)
+  add_subdirectory(examples)
 endif()
 
+# ----------------------------
+# Documentation
+# ----------------------------
+if(THOR_BUILD_DOC)
+  find_package(Doxygen REQUIRED)
+  add_subdirectory(doc)
+endif()
 
-# Install include directory and license files
-install(DIRECTORY include
-		DESTINATION .)
+# ----------------------------
+# Install
+# ----------------------------
+install(DIRECTORY include/ DESTINATION include)
+install(FILES License.txt DESTINATION share/doc/thor)
+install(DIRECTORY extlibs/aurora/include/ DESTINATION include)
 
-install(FILES cmake/Modules/FindThor.cmake
-		DESTINATION ./cmake/Modules/)
-
-install(FILES License.txt
-		RENAME LicenseThor.txt
-		DESTINATION ${THOR_DOC_INSTALL_DIR})
-
-install(FILES extlibs/aurora/License.txt
-		RENAME LicenseAurora.txt
-		DESTINATION ${THOR_DOC_INSTALL_DIR})
-
-install(DIRECTORY extlibs/aurora/include
-		DESTINATION .)
