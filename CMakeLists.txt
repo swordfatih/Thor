@@ -111,7 +111,7 @@ endif()
 if(NOT THOR_SHARED_LIBS)
 	set(SFML_STATIC_LIBRARIES TRUE)
 endif()
-find_package(SFML 2.5 COMPONENTS audio graphics window system REQUIRED)
+find_package(SFML 2.5 COMPONENTS audio graphics window system CONFIG REQUIRED)
 
 if(NOT SFML_FOUND)
 	set(SFML_DIR "" CACHE PATH "SFML top-level directory")
